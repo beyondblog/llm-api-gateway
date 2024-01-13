@@ -12,6 +12,13 @@ type VastAIProvider struct {
 	apiKey string
 }
 
+type ExecuteCommandResponse struct {
+	Success       bool   `json:"success"`
+	WriteablePath string `json:"writeable_path"`
+	ResultUrl     string `json:"result_url"`
+	Msg           string `json:"msg"`
+}
+
 type InstanceResponse struct {
 	Instances []Instance `json:"instances"`
 }
@@ -144,6 +151,7 @@ func (v *VastAIProvider) GetEndpoints() ([]ServerEndpoint, error) {
 		}
 		port, _ := strconv.Atoi(instance.Ports["5000/tcp"][0].HostPort)
 		endpoints = append(endpoints, ServerEndpoint{
+			ID:      fmt.Sprintf("%d", instance.Id),
 			Host:    strings.TrimSpace(instance.PublicIpaddr),
 			Port:    port,
 			CPUName: instance.CpuName,
@@ -166,6 +174,26 @@ func (v *VastAIProvider) request(method, url string, payload []byte) ([]byte, er
 		return utils.GetHttpRequest(url, header)
 	} else if method == "POST" {
 		return utils.PostHttpRequest(url, header, payload)
+	} else if method == "PUT" {
+		return utils.PutHttpRequest(url, header, payload)
 	}
 	return nil, fmt.Errorf("unsupported method: %s", method)
+}
+
+func (v *VastAIProvider) executeCommand(instanceID int, command string) (*ExecuteCommandResponse, error) {
+
+	payload := fmt.Sprintf(`{ "command": "%s" }`, command)
+
+	data, err := v.request("PUT", fmt.Sprintf("https://console.vast.ai/api/v0/instances/command/%d", instanceID), []byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var response ExecuteCommandResponse
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

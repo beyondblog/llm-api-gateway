@@ -1,6 +1,7 @@
 package provider
 
 type ServerEndpoint struct {
+	ID      string
 	Host    string
 	Port    int
 	CPUName string
