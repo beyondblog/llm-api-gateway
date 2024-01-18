@@ -49,24 +49,16 @@ func (s *Server) ReloadBackend() {
 	serverPool := new(ServerPool)
 	serverEndpoint, err := s.llmProvider.GetEndpoints()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("GetEndpoints err: %v\n", err)
+		return
 	}
 
 	if len(serverEndpoint) == 0 {
-		log.Fatal("Please provide one or more backends to load balance")
+		log.Printf("Please provide one or more backends to load balance")
+		return
 	}
 
 	log.Printf("Loading endpoints size: %d\n", len(serverEndpoint))
-	//serverEndpoint = []provider.ServerEndpoint{}
-	//
-	//serverEndpoint = append(serverEndpoint, provider.ServerEndpoint{
-	//	ID:      "",
-	//	Host:    "127.0.0.1",
-	//	Port:    8080,
-	//	CPUName: "",
-	//	GPUName: "",
-	//})
-	// parse servers
 	for _, endpoint := range serverEndpoint {
 		//goland:noinspection HttpUrlsUsage
 		serverUrl, err := url.Parse(fmt.Sprintf("http://%s:%d", endpoint.Host, endpoint.Port))
@@ -114,6 +106,10 @@ func (s *Server) ReloadBackend() {
 				return
 			}
 
+			// after 3 retries, mark this backend as down
+			serverPool.MarkBackendStatus(serverUrl, false)
+			log.Printf("%s [%s]\n", serverUrl.String(), "down")
+
 			// if the same request routing for few attempts with different backends, increase the count
 			attempts := GetAttemptsFromContext(request)
 			log.Printf("%s(%s) Attempting retry %d\n", request.RemoteAddr, request.URL.Path, attempts)
@@ -136,7 +132,7 @@ func (s *Server) ReloadBackend() {
 			URL:            serverUrl,
 			Alive:          true,
 			ReverseProxy:   proxy,
-			HealthCheckURL: "/v1/models",
+			HealthCheckURL: "/v1/internal/model/info",
 		})
 		log.Printf("host %s found\n", serverUrl)
 	}
@@ -161,6 +157,7 @@ func (s *Server) Run(port int) {
 	}
 
 	go s.SyncBackend()
+	log.Printf("Model %s", s.llmProvider.GetModel())
 	log.Printf("Load Balancer started at :%d\n", port)
 
 	go func() {

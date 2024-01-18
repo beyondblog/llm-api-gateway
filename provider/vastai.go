@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/beyondblog/llm-api-gateway/utils"
+	"log"
 	"strconv"
 	"strings"
 )
 
 type VastAIProvider struct {
 	apiKey string
+	model  string
+	branch string
 }
 
 type ExecuteCommandResponse struct {
@@ -21,6 +24,11 @@ type ExecuteCommandResponse struct {
 
 type InstanceResponse struct {
 	Instances []Instance `json:"instances"`
+}
+
+type LLMModelInfoResponse struct {
+	ModelName string        `json:"model_name"`
+	LoraNames []interface{} `json:"lora_names"`
 }
 
 type Instance struct {
@@ -123,10 +131,23 @@ type InstancePortInfo struct {
 	HostPort string `json:"HostPort"`
 }
 
-func NewVastAIProvider(apiKey string) *VastAIProvider {
+type ExecuteCommand struct {
+	Command string `json:"command"`
+}
+
+func NewVastAIProvider(apiKey, model, branch string) *VastAIProvider {
+	if branch == "" {
+		branch = "main"
+	}
 	return &VastAIProvider{
 		apiKey: apiKey,
+		branch: branch,
+		model:  model,
 	}
+}
+
+func (v *VastAIProvider) GetModel() string {
+	return fmt.Sprintf("%s_%s", strings.ReplaceAll(v.model, "/", "_"), v.branch)
 }
 
 func (v *VastAIProvider) GetEndpoints() ([]ServerEndpoint, error) {
@@ -150,13 +171,19 @@ func (v *VastAIProvider) GetEndpoints() ([]ServerEndpoint, error) {
 			continue
 		}
 		port, _ := strconv.Atoi(instance.Ports["5000/tcp"][0].HostPort)
-		endpoints = append(endpoints, ServerEndpoint{
+
+		endpoint := ServerEndpoint{
 			ID:      fmt.Sprintf("%d", instance.Id),
 			Host:    strings.TrimSpace(instance.PublicIpaddr),
 			Port:    port,
 			CPUName: instance.CpuName,
 			GPUName: instance.GpuName,
-		})
+		}
+
+		if v.healthCheck(endpoint) {
+			endpoints = append(endpoints, endpoint)
+		}
+
 	}
 	return endpoints, nil
 }
@@ -182,9 +209,12 @@ func (v *VastAIProvider) request(method, url string, payload []byte) ([]byte, er
 
 func (v *VastAIProvider) executeCommand(instanceID int, command string) (*ExecuteCommandResponse, error) {
 
-	payload := fmt.Sprintf(`{ "command": "%s" }`, command)
+	commandParam := ExecuteCommand{
+		Command: command,
+	}
+	payload, _ := json.Marshal(commandParam)
 
-	data, err := v.request("PUT", fmt.Sprintf("https://console.vast.ai/api/v0/instances/command/%d", instanceID), []byte(payload))
+	data, err := v.request("PUT", fmt.Sprintf("https://console.vast.ai/api/v0/instances/command/%d/", instanceID), payload)
 	if err != nil {
 		return nil, err
 	}
@@ -196,4 +226,21 @@ func (v *VastAIProvider) executeCommand(instanceID int, command string) (*Execut
 	}
 
 	return &response, nil
+}
+
+func (v *VastAIProvider) healthCheck(endpoint ServerEndpoint) bool {
+	data, err := v.request("GET", fmt.Sprintf("http://%s:%d/v1/internal/model/info", endpoint.Host,
+		endpoint.Port), nil)
+	if err != nil {
+		log.Printf("endpoint health check err: %v\n, %s:%d", err, endpoint.Host, endpoint.Port)
+		return false
+	}
+
+	var response LLMModelInfoResponse
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		log.Printf("endpoint health check err: %v\n, %s:%d", err, endpoint.Host, endpoint.Port)
+		return false
+	}
+	return response.ModelName == v.GetModel()
 }

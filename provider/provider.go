@@ -11,4 +11,5 @@ type ServerEndpoint struct {
 type LLMProvider interface {
 	GetEndpoints() ([]ServerEndpoint, error)
 	AutoScaling(replica int) error
+	GetModel() string
 }

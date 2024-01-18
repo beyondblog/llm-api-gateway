@@ -7,7 +7,7 @@ import (
 
 func TestVastAIProvider_GetEndpoints(t *testing.T) {
 	apiKey := os.Getenv("VASTAI_API_KEY")
-	provider := NewVastAIProvider(apiKey)
+	provider := NewVastAIProvider(apiKey, "TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ", "main")
 	endpoints, err := provider.GetEndpoints()
 	if err != nil {
 		t.Error(err)
@@ -17,9 +17,16 @@ func TestVastAIProvider_GetEndpoints(t *testing.T) {
 
 func TestVastAI_ExecuteCommand(t *testing.T) {
 	apiKey := os.Getenv("VASTAI_API_KEY")
-	provider := NewVastAIProvider(apiKey)
+	provider := NewVastAIProvider(apiKey, "TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ", "main")
 	instanceID := 7860040
 	r, err := provider.executeCommand(instanceID, "ls -llah /app")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Logf("response: %v", r)
+
 	if err != nil {
 		t.Error(err)
 		return
